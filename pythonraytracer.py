@@ -20,6 +20,19 @@ def length(vec):
 def normalize(vec):
     return vec / length(vec)
 
+def reflect(ray, normal):
+    proj = dot(ray, normal)
+    return ray - 2.0*proj*normal
+
+def randSphere():
+    Xi = [rnd.random(), rnd.random()]
+    Xi = list(map(lambda x: x*2.0 - 1.0, Xi))
+    cosphi = np.sqrt(1.0 - Xi[0]**2)
+    theta = np.pi * 2.0 * Xi[1]
+    x = cosphi * np.sin(theta)
+    y = cosphi * np.cos(theta)
+    return np.array([x, y, Xi[0]])
+
 def traverse(scene, ray):
     outRay = Ray()
     outRay.src = None
@@ -63,18 +76,35 @@ def traverse(scene, ray):
             
     return outRay, outNormal
 
-def randSphere():
-    Xi = [rnd.random(), rnd.random()]
-    Xi = list(map(lambda x: x*2.0 - 1.0, Xi))
-    cosphi = np.sqrt(1.0 - Xi[0]**2)
-    theta = np.pi * 2.0 * Xi[1]
-    x = cosphi * np.sin(theta)
-    y = cosphi * np.cos(theta)
-    return np.array([x, y, Xi[0]])
+def raytrace(scene, ray, bounces):
+    outRay, normal = traverse(None, ray)
+    if outRay.src is None:
+        # hit sky, sky is not reflective
+        return np.array([0.0,0.0,0.1])
+    elif bounces == 0:
+        if outRay.src[2] < -0.9: # floor
+            return np.array([0.0,0.0,0.0])
+        else: #light
+            return np.array([1.0,0.5,0.0])
+    
+    #surface materials
+    if outRay.src[2] < -0.9: # floor
+        Z = np.sin(np.pi * 2.0 * outRay.src[0]) * np.sin(np.pi * 2.0 * outRay.src[1])
+        if Z < 0.0: Z = 0.0
+        Z = Z * 0.5 + 0.25
+        color = np.array([Z,Z,Z])
+        emission = np.array([0.0,0.0,0.0])
+    else: #light
+        color = np.array([1.0,1.0,1.0])
+        emission = np.array([1.0,0.5,0.0])
 
-def reflect(ray, normal):
-    proj = dot(ray, normal)
-    return ray - 2.0*proj*normal
+    #generate new ray
+    outRay.vec = randSphere()
+    if dot(outRay.vec, normal) < 0.0:
+        outRay.vec = reflect(outRay.vec, normal)
+
+    light = raytrace(scene, outRay, bounces - 1)
+    return light * color + emission
 
 def render(width=800, height=600):
     x = np.arange(width)
@@ -90,27 +120,8 @@ def render(width=800, height=600):
             ray = Ray()
             ray.src = np.array([0,0,0])
             ray.vec = normalize(np.array([xPos, 1.0, yPos]))
-            
-            outRay, normal = traverse(None, ray)
-            
-            if outRay.src is None:
-                line.append([0.0,0.0,0.0])
-                continue
 
-            outRay.vec = randSphere()
-            if dot(outRay.vec, normal) < 0.0:
-                outRay.vec = reflect(outRay.vec, normal)
-
-            outRay, normal = traverse(None, outRay)
-
-            if outRay.src is None:
-                line.append([0.0,0.0,0.0])
-                continue
-            if outRay.src[2] < -0.9:
-                Z = np.sin(np.pi * 2.0 * outRay.src[0]) * np.sin(np.pi * 2.0 * outRay.src[1])
-                line.append([Z,Z,Z])
-            else:
-                line.append([1.0,0.5,0.0])
+            line.append(raytrace(None, ray, 1))
         img.append(line)
     plt.imshow(img)
     plt.show()
