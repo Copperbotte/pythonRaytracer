@@ -113,6 +113,8 @@ def render(width=800, height=600):
     X = (2.0*x / width) - 1.0
     Y = (2.0*y / height) - 1.0
     Y *= height / width
+
+    samples = 16
     
     img = []
     for yPos in Y[::-1]:
@@ -121,8 +123,14 @@ def render(width=800, height=600):
             ray = Ray()
             ray.src = np.array([0,0,0])
             ray.vec = normalize(np.array([xPos, 1.0, yPos]))
+            line.append(raytrace(None, ray, 1))
 
-            line.append(ot.l2s(raytrace(None, ray, 1)))
+            for i in range(samples - 1):
+                dx = 2.0*rnd.random() / width
+                dy = 2.0*rnd.random() / height
+                ray.vec = normalize(np.array([xPos + dx, 1.0, yPos + dy]))
+                line[-1] += raytrace(None, ray, 1)
+            line[-1] = ot.l2s(line[-1] / float(samples))
         img.append(line)
     plt.imshow(img)
     plt.show()
