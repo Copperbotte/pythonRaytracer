@@ -24,6 +24,8 @@ def traverse(scene, ray):
     outRay = Ray()
     outRay.src = None
     outRay.vec = ray.vec
+    outNormal = np.array([0,0,0])
+    distMin = 0.001
     rayDist = sys.float_info.max
     
     #floor
@@ -37,8 +39,7 @@ def traverse(scene, ray):
             dst.src = ray.src - ray.vec / proj
             
             dstlen = length(dst.src - ray.src)
-            if dstlen < rayDist:
-                None
+            if distMin < dstlen and dstlen < rayDist:
                 rayDist = dstlen
                 outRay = dst
                 
@@ -55,11 +56,25 @@ def traverse(scene, ray):
         #hit sphere, calculate intersection
         sInnerOffset = np.sqrt(sInnerOffset2)
         rDist = sRayClosest - sInnerOffset
-        if rDist < rayDist:
+        if distMin < rDist and rDist < rayDist:
             rayDist = rDist
             outRay.src = ray.src + ray.vec * rayDist
+            outNormal = normalize(outRay.src - sPos)
             
-    return outRay
+    return outRay, outNormal
+
+def randSphere():
+    Xi = [rnd.random(), rnd.random()]
+    Xi = list(map(lambda x: x*2.0 - 1.0, Xi))
+    cosphi = np.sqrt(1.0 - Xi[0]**2)
+    theta = np.pi * 2.0 * Xi[1]
+    x = cosphi * np.sin(theta)
+    y = cosphi * np.cos(theta)
+    return np.array([x, y, Xi[0]])
+
+def reflect(ray, normal):
+    proj = dot(ray, normal)
+    return ray - 2.0*proj*normal
 
 def render(width=800, height=600):
     x = np.arange(width)
@@ -75,8 +90,19 @@ def render(width=800, height=600):
             ray = Ray()
             ray.src = np.array([0,0,0])
             ray.vec = normalize(np.array([xPos, 1.0, yPos]))
+            
+            outRay, normal = traverse(None, ray)
+            
+            if outRay.src is None:
+                line.append([0.0,0.0,0.0])
+                continue
 
-            outRay = traverse(None, ray)
+            outRay.vec = randSphere()
+            if dot(outRay.vec, normal) < 0.0:
+                outRay.vec = reflect(outRay.vec, normal)
+
+            outRay, normal = traverse(None, outRay)
+
             if outRay.src is None:
                 line.append([0.0,0.0,0.0])
                 continue
@@ -85,7 +111,6 @@ def render(width=800, height=600):
                 line.append([Z,Z,Z])
             else:
                 line.append([1.0,0.5,0.0])
-            
         img.append(line)
     plt.imshow(img)
     plt.show()
