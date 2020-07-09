@@ -1,5 +1,6 @@
 
 import matplotlib.pyplot as plt
+import optical_tools as ot
 import numpy as np
 import random as rnd
 import sys
@@ -80,12 +81,12 @@ def raytrace(scene, ray, bounces):
     outRay, normal = traverse(None, ray)
     if outRay.src is None:
         # hit sky, sky is not reflective
-        return np.array([0.0,0.0,0.1])
+        return np.array(ot.s2l([0.0,0.0,0.1]))
     elif bounces == 0:
         if outRay.src[2] < -0.9: # floor
             return np.array([0.0,0.0,0.0])
         else: #light
-            return np.array([1.0,0.5,0.0])
+            return np.array(ot.s2l([1.0,0.5,0.0]))
     
     #surface materials
     if outRay.src[2] < -0.9: # floor
@@ -96,7 +97,7 @@ def raytrace(scene, ray, bounces):
         emission = np.array([0.0,0.0,0.0])
     else: #light
         color = np.array([1.0,1.0,1.0])
-        emission = np.array([1.0,0.5,0.0])
+        emission = np.array(ot.s2l([1.0,0.5,0.0]))
 
     #generate new ray
     outRay.vec = randSphere()
@@ -121,7 +122,7 @@ def render(width=800, height=600):
             ray.src = np.array([0,0,0])
             ray.vec = normalize(np.array([xPos, 1.0, yPos]))
 
-            line.append(raytrace(None, ray, 1))
+            line.append(ot.l2s(raytrace(None, ray, 1)))
         img.append(line)
     plt.imshow(img)
     plt.show()
