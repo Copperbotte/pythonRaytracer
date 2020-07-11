@@ -10,6 +10,13 @@ class Ray:
         self.src = np.array([0,0,0])
         self.vec = np.array([0,0,0])
 
+def clamp(v, low=0.0, high=1.0):
+    if v < low:
+        return low
+    if high < v:
+        return high
+    return v
+
 def dot(v1, v2):
     v1 = np.array([v1])
     v2 = np.array([v2])
@@ -34,13 +41,14 @@ def randSphere():
     y = cosphi * np.cos(theta)
     return np.array([x, y, Xi[0]])
 
-def traverse(scene, ray):
+def traverse(scene, ray, inID=0):
     outRay = Ray()
     outRay.src = None
     outRay.vec = ray.vec
     outNormal = np.array([0,0,0])
     distMin = 0.001
     rayDist = sys.float_info.max
+    outID = 0
     
     #floor
     norm = np.array([0,0,1])
@@ -53,13 +61,14 @@ def traverse(scene, ray):
             dst.src = ray.src - ray.vec / proj
             
             dstlen = length(dst.src - ray.src)
-            if distMin < dstlen and dstlen < rayDist:
+            if inID != 1 and dstlen < rayDist:
                 rayDist = dstlen
                 outRay = dst
-                
+                outNormal = norm
+                outID = 1
     #spheres
     #project sphere's origin onto the ray
-    sPos = np.array([-0.25, 2.0, 0.0])
+    sPos = np.array([-0.25, 2.0, -1.0 + 0.3333])
     sRad = 0.3333
     
     sOffset = sPos - ray.src
@@ -70,28 +79,30 @@ def traverse(scene, ray):
         #hit sphere, calculate intersection
         sInnerOffset = np.sqrt(sInnerOffset2)
         rDist = sRayClosest - sInnerOffset
-        if distMin < rDist and rDist < rayDist:
+        if inID != 2 and rDist < rayDist:
             rayDist = rDist
             outRay.src = ray.src + ray.vec * rayDist
             outNormal = normalize(outRay.src - sPos)
+            outID = 2
             
-    return outRay, outNormal
+    return outRay, outNormal, outID
 
-def raytrace(scene, ray, bounces):
-    outRay, normal = traverse(None, ray)
+def raytrace(scene, ray, bounces, inID=0):
+    outRay, normal, outID = traverse(None, ray, inID)
     if outRay.src is None:
         # hit sky, sky is not reflective
         return np.array(ot.s2l([0.0,0.0,0.1]))
     elif bounces == 0:
-        if outRay.src[2] < -0.9: # floor
+        if outID == 1: # floor
             return np.array([0.0,0.0,0.0])
         else: #light
             return np.array(ot.s2l([1.0,0.5,0.0]))
     
     #surface materials
-    if outRay.src[2] < -0.9: # floor
-        Z = np.sin(np.pi * 2.0 * outRay.src[0]) * np.sin(np.pi * 2.0 * outRay.src[1])
-        if Z < 0.0: Z = 0.0
+    if outID == 1: # floor
+        #Z = np.sin(np.pi * 2.0 * outRay.src[0]) * np.sin(np.pi * 2.0 * outRay.src[1])
+        Z = 1.0
+        Z = clamp(Z)
         Z = Z * 0.5 + 0.25
         color = np.array([Z,Z,Z])
         emission = np.array([0.0,0.0,0.0])
@@ -104,8 +115,8 @@ def raytrace(scene, ray, bounces):
     if dot(outRay.vec, normal) < 0.0:
         outRay.vec = reflect(outRay.vec, normal)
 
-    light = raytrace(scene, outRay, bounces - 1)
-    return light * color + emission
+    light = raytrace(scene, outRay, bounces - 1, outID)
+    return emission + light * color
 
 def render(width=800, height=600):
     x = np.arange(width)
@@ -114,7 +125,7 @@ def render(width=800, height=600):
     Y = (2.0*y / height) - 1.0
     Y *= height / width
 
-    samples = 16
+    samples = 1
     
     img = []
     for yPos in Y[::-1]:
@@ -134,8 +145,31 @@ def render(width=800, height=600):
         img.append(line)
     plt.imshow(img)
     plt.show()
+
+def testSampler():
+    highest = 0.0
+    img = [[0.0 for x in range(800)] for y in range(600)]
+    for n in range(100000):
+        r = randSphere()
+        r *= 300
+        r += np.array([400.0,300.0,0.0])
+        x = int(r[0])
+        y = int(r[1])
+        try:
+            img[y][x] += 1.0
+        except Exception as e:
+            print(e, x, y)
+        if highest < img[y][x]:
+            highest = img[y][x]
     
+    for y in range(len(img)):
+        for x in range(len(img[0])):
+            img[y][x] /= highest
+    plt.imshow(img)
+    plt.show()
+        
+
 if __name__ == "__main__":
     render()
-
+    #testSampler()
     
