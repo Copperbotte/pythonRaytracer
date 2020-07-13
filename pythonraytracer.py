@@ -34,12 +34,44 @@ def reflect(ray, normal):
 
 def randSphere():
     Xi = [rnd.random(), rnd.random()]
-    Xi = list(map(lambda x: x*2.0 - 1.0, Xi))
-    cosphi = np.sqrt(1.0 - Xi[0]**2)
+    Xi[0] = Xi[0] * 2.0 - 1.0
+    cospsi = np.sqrt(1.0 - Xi[0]**2)
     theta = np.pi * 2.0 * Xi[1]
-    x = cosphi * np.sin(theta)
-    y = cosphi * np.cos(theta)
-    return np.array([x, y, Xi[0]])
+    x = cospsi * np.cos(theta)
+    y = cospsi * np.sin(theta)
+    z = Xi[0]
+    return np.array([x, y, z])
+
+def toWorld(vec, normal):
+    #todo: do this properly using quaternions
+    sampleNormal = np.array([0.0,0.0,1.0])
+    cos = dot(sampleNormal, normal)
+    if 0.99 < cos:
+        return vec
+
+    #make a pair of bases that are orthogonal to the normal
+    b1 = np.cross(sampleNormal, normal)
+    b1 = normalize(b1)
+    b2 = np.cross(b1, normal)
+
+    #rotate toward normal
+    M = np.array([b1, b2, normal]).transpose()
+
+    return M.dot(vec)
+
+def randLambert(normal):
+    Xi = [rnd.random(), rnd.random()]
+    sinpsi = np.sqrt(Xi[0])
+    cospsi = np.sqrt(1.0 - sinpsi**2)
+    theta = np.pi * 2.0 * Xi[1]
+    x = cospsi * np.cos(theta)
+    y = cospsi * np.sin(theta)
+    z = sinpsi
+
+    vec = np.array([x, y, z])
+    #rotate toward normal
+    
+    return toWorld(np.array([x, y, z]), normal)
 
 def traverse(scene, ray, inID=0):
     outRay = Ray()
@@ -103,7 +135,7 @@ def raytrace(scene, ray, bounces, inID=0):
         #Z = np.sin(np.pi * 2.0 * outRay.src[0]) * np.sin(np.pi * 2.0 * outRay.src[1])
         Z = 1.0
         Z = clamp(Z)
-        Z = Z * 0.5 + 0.25
+        #Z = Z * 0.5 + 0.25
         color = np.array([Z,Z,Z])
         emission = np.array([0.0,0.0,0.0])
     else: #light
@@ -111,12 +143,15 @@ def raytrace(scene, ray, bounces, inID=0):
         emission = np.array(ot.s2l([1.0,0.5,0.0]))
 
     #generate new ray
-    outRay.vec = randSphere()
+    #outRay.vec = randSphere()
+    outRay.vec = randLambert(normal)
     if dot(outRay.vec, normal) < 0.0:
         outRay.vec = reflect(outRay.vec, normal)
 
     light = raytrace(scene, outRay, bounces - 1, outID)
-    return emission + light * color
+    diffuse = 1.0
+    #diffuse = dot(outRay.vec, normal)
+    return emission + light * color# * diffuse
 
 def render(width=800, height=600):
     x = np.arange(width)
@@ -126,7 +161,7 @@ def render(width=800, height=600):
     Y *= height / width
 
     samples = 1
-    
+
     img = []
     for yPos in Y[::-1]:
         line = []
@@ -146,12 +181,14 @@ def render(width=800, height=600):
     plt.imshow(img)
     plt.show()
 
-def testSampler():
+def testSampler(sampler=randSphere):
     highest = 0.0
     img = [[0.0 for x in range(800)] for y in range(600)]
     for n in range(100000):
-        r = randSphere()
+        r = sampler()
         r *= 300
+        #r = np.array([r[0], r[2], r[1]])
+        r *= np.array([1.0,-1.0,1.0])
         r += np.array([400.0,300.0,0.0])
         x = int(r[0])
         y = int(r[1])
@@ -167,9 +204,9 @@ def testSampler():
             img[y][x] /= highest
     plt.imshow(img)
     plt.show()
-        
 
 if __name__ == "__main__":
     render()
     #testSampler()
-    
+    testSampler(lambda: randLambert(np.array([0.0,1.0,0.0])))
+    None
