@@ -4,6 +4,7 @@ import optical_tools as ot
 import numpy as np
 import random as rnd
 import sys
+import time
 
 class Ray:
     def __init__(self):
@@ -153,32 +154,51 @@ def raytrace(scene, ray, bounces, inID=0):
     #diffuse = dot(outRay.vec, normal)
     return emission + light * color# * diffuse
 
-def render(width=800, height=600):
+def toTimeString(t):
+    return '{0} minutes {1} seconds'.format(*divmod(t, 60))
+
+def render(width=800, height=600, samples=1, bounces=1):
     x = np.arange(width)
     y = np.arange(height)
     X = (2.0*x / width) - 1.0
     Y = (2.0*y / height) - 1.0
     Y *= height / width
-
-    samples = 1
-
+    
+    startTime = time.time()
+    prevTime = startTime
+    
     img = []
-    for yPos in Y[::-1]:
+    for yPos,yn in zip(Y[::-1], y):
         line = []
-        for xPos in X:
+        for xPos,xn in zip(X,x):
+            curTime = time.time()
+            if 10.0 <= curTime - prevTime:
+                elapsedTime = curTime - startTime
+                prevTime = curTime
+                elapsedPercent = float(yn*width+xn)/(float(width*height) / 100.0)
+                print()
+                print(toTimeString(elapsedTime))
+                print(int(elapsedPercent), "% complete")
+                print(toTimeString((100.0 / elapsedPercent - 1.0)*elapsedTime) + " remaining")
             ray = Ray()
             ray.src = np.array([0,0,0])
             ray.vec = normalize(np.array([xPos, 1.0, yPos]))
-            line.append(raytrace(None, ray, 1))
+            line.append(raytrace(None, ray, bounces))
 
             for i in range(samples - 1):
                 dx = 2.0*rnd.random() / width
                 dy = 2.0*rnd.random() / height
                 ray.vec = normalize(np.array([xPos + dx, 1.0, yPos + dy]))
-                line[-1] += raytrace(None, ray, 1)
+                line[-1] += raytrace(None, ray, bounces)
             line[-1] = ot.l2s(line[-1] / float(samples))
         img.append(line)
-    plt.imshow(img)
+        
+    elapsedTime = time.time() - startTime
+    print(toTimeString(elapsedTime) + ' total')
+    fig = plt.figure(figsize=(float(width)/100.0, float(height)/100.0))
+    ax = fig.add_axes([0,0,1,1])
+    ax.imshow(img)
+    
     plt.show()
 
 def testSampler(sampler=randSphere):
@@ -208,5 +228,5 @@ def testSampler(sampler=randSphere):
 if __name__ == "__main__":
     render()
     #testSampler()
-    testSampler(lambda: randLambert(np.array([0.0,1.0,0.0])))
+    #testSampler(lambda: randLambert(np.array([0.0,1.0,0.0])))
     None
