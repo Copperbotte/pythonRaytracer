@@ -144,15 +144,17 @@ def raytrace(scene, ray, bounces, inID=0):
         emission = np.array(ot.s2l([1.0,0.5,0.0]))
 
     #generate new ray
-    #outRay.vec = randSphere()
-    outRay.vec = randLambert(normal)
+    outRay.vec = randSphere()
+    #outRay.vec = randLambert(normal)
     if dot(outRay.vec, normal) < 0.0:
         outRay.vec = reflect(outRay.vec, normal)
 
     light = raytrace(scene, outRay, bounces - 1, outID)
     diffuse = 1.0
-    #diffuse = dot(outRay.vec, normal)
-    return emission + light * color# * diffuse
+    diffuse = dot(outRay.vec, normal)
+    lambertpdf = 1.0 / np.pi
+    hemipdf = 1.0 / (2.0 * np.pi)
+    return emission + light * color * diffuse * (lambertpdf / hemipdf)
 
 def toTimeString(t):
     return '{0} minutes {1} seconds'.format(*divmod(t, 60))
