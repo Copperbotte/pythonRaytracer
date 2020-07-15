@@ -1,5 +1,6 @@
 
 import matplotlib.pyplot as plt
+import matplotlib.colors as mplcolor
 import optical_tools as ot
 import numpy as np
 import random as rnd
@@ -120,7 +121,7 @@ def traverse(scene, ray, inID=0):
             
     return outRay, outNormal, outID
 
-def raytrace(scene, ray, bounces, inID=0):
+def raytrace(scene, ray, bounces, inID=0, mode="Hemisphere"):
     outRay, normal, outID = traverse(None, ray, inID)
     if outRay.src is None:
         # hit sky, sky is not reflective
@@ -144,22 +145,32 @@ def raytrace(scene, ray, bounces, inID=0):
         emission = np.array(ot.s2l([1.0,0.5,0.0]))
 
     #generate new ray
-    outRay.vec = randSphere()
-    #outRay.vec = randLambert(normal)
+    hemipdf = 1.0 / (2.0 * np.pi)
+    
+    if mode == "SurfaceIS":
+        outRay.vec = randLambert(normal)
+        lambertpdf = hemipdf; # uniform pdf
+    else:
+        outRay.vec = randSphere()
+        lambertpdf = 1.0 / np.pi
+
+    #"clamp"
     if dot(outRay.vec, normal) < 0.0:
         outRay.vec = reflect(outRay.vec, normal)
 
     light = raytrace(scene, outRay, bounces - 1, outID)
-    diffuse = 1.0
-    diffuse = dot(outRay.vec, normal)
-    lambertpdf = 1.0 / np.pi
-    hemipdf = 1.0 / (2.0 * np.pi)
+
+    if mode == "SurfaceIS":
+        diffuse = 1.0
+    else:
+        diffuse = dot(outRay.vec, normal)
+        
     return emission + light * color * diffuse * (lambertpdf / hemipdf)
 
 def toTimeString(t):
     return '{0} minutes {1} seconds'.format(*divmod(t, 60))
 
-def render(width=800, height=600, samples=1, bounces=1):
+def render(width=800, height=600, samples=1, bounces=1, mode="Hemisphere"):
     x = np.arange(width)
     y = np.arange(height)
     X = (2.0*x / width) - 1.0
@@ -185,23 +196,23 @@ def render(width=800, height=600, samples=1, bounces=1):
             ray = Ray()
             ray.src = np.array([0,0,0])
             ray.vec = normalize(np.array([xPos, 1.0, yPos]))
-            line.append(raytrace(None, ray, bounces))
+            line.append(raytrace(None, ray, bounces, mode=mode))
 
             for i in range(samples - 1):
                 dx = 2.0*rnd.random() / width
                 dy = 2.0*rnd.random() / height
                 ray.vec = normalize(np.array([xPos + dx, 1.0, yPos + dy]))
-                line[-1] += raytrace(None, ray, bounces)
+                line[-1] += raytrace(None, ray, bounces, mode=mode)
             line[-1] = ot.l2s(line[-1] / float(samples))
         img.append(line)
         
     elapsedTime = time.time() - startTime
     print(toTimeString(elapsedTime) + ' total')
-    fig = plt.figure(figsize=(float(width)/100.0, float(height)/100.0))
+    fig = plt.figure(mode, figsize=(float(width)/100.0, float(height)/100.0))
     ax = fig.add_axes([0,0,1,1])
     ax.imshow(img)
     
-    plt.show()
+    #plt.show()
 
 def testSampler(sampler=randSphere):
     highest = 0.0
@@ -224,11 +235,19 @@ def testSampler(sampler=randSphere):
     for y in range(len(img)):
         for x in range(len(img[0])):
             img[y][x] /= highest
+            hsv = mplcolor.rgb_to_hsv(img[y][x])
+            if 1.0 < hsv[2]:
+                hsv[1] /= hsv[2]
+                hsv[2] = 1.0
+            img[y][x] = mplcolor.hsv_to_rgb(hsv)
+            
     plt.imshow(img)
     plt.show()
 
 if __name__ == "__main__":
-    render()
+    render(samples=1, bounces=1, mode="SurfaceIS")
+    render(samples=1, bounces=1)
+    plt.show()
     #testSampler()
     #testSampler(lambda: randLambert(np.array([0.0,1.0,0.0])))
     None
