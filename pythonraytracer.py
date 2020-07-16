@@ -75,6 +75,11 @@ def randLambert(normal):
     
     return toWorld(np.array([x, y, z]), normal)
 
+def randLight():
+    sPos = np.array([-0.25, 2.0, -1.0 + 0.3333])
+    rPos = randSphere() * 0.3333 + sPos
+    return rPos, normalize(rPos - sPos)
+
 def traverse(scene, ray, inID=0):
     outRay = Ray()
     outRay.src = None
@@ -149,10 +154,20 @@ def raytrace(scene, ray, bounces, inID=0, mode="Hemisphere"):
     
     if mode == "SurfaceIS":
         outRay.vec = randLambert(normal)
-        lambertpdf = hemipdf; # uniform pdf
+        samplepdf = hemipdf # uniform pdf
+    elif mode == "LightIS":
+        rPos, lnorm = randLight()
+        rDiff = rPos - outRay.src
+        outRay.vec = normalize(rDiff)
+        #samplepdf maps the probability area from one area to another
+        #this *projects* the light differential area onto the sphere
+        samplepdf = 1.0 / (4.0 * np.pi * 0.3333*2) #sphere total area
+        samplepdf *= abs(dot(lnorm, outRay.vec))   #area projection
+        samplepdf /= dot(rDiff, rDiff)             #area scale
+        samplepdf *= hemipdf                       #scale to final pdf
     else:
         outRay.vec = randSphere()
-        lambertpdf = 1.0 / np.pi
+        samplepdf = 1.0 / np.pi
 
     #"clamp"
     if dot(outRay.vec, normal) < 0.0:
@@ -162,10 +177,12 @@ def raytrace(scene, ray, bounces, inID=0, mode="Hemisphere"):
 
     if mode == "SurfaceIS":
         diffuse = 1.0
+    elif mode == "LightIS":
+        diffuse = dot(outRay.vec, normal)
     else:
         diffuse = dot(outRay.vec, normal)
         
-    return emission + light * color * diffuse * (lambertpdf / hemipdf)
+    return emission + light * color * diffuse * (samplepdf / hemipdf)
 
 def toTimeString(t):
     return '{0} minutes {1} seconds'.format(*divmod(t, 60))
@@ -245,8 +262,12 @@ def testSampler(sampler=randSphere):
     plt.show()
 
 if __name__ == "__main__":
-    render(samples=1, bounces=1, mode="SurfaceIS")
-    render(samples=1, bounces=1)
+    x = 800
+    y = 600
+    s = 1
+    render(width=x, height=y, samples=s, bounces=1, mode="SurfaceIS")
+    render(width=x, height=y, samples=s, bounces=1, mode="LightIS")
+    render(width=x, height=y, samples=s, bounces=1)
     plt.show()
     #testSampler()
     #testSampler(lambda: randLambert(np.array([0.0,1.0,0.0])))
