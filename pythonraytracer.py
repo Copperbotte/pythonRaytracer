@@ -151,20 +151,49 @@ def raytrace(scene, ray, bounces, inID=0, mode="Hemisphere"):
 
     #generate new ray
     hemipdf = 1.0 / (2.0 * np.pi)
+    samplemode = mode
+
+    def hemisphere():
+        return randSphere(), 1.0 / np.pi
     
-    if mode == "SurfaceIS":
-        outRay.vec = randLambert(normal)
-        samplepdf = hemipdf # uniform pdf
-    elif mode == "LightIS":
+    def surfaceIS(normal):
+        vec = randLambert(normal)
+        pdf = hemipdf # uniform pdf
+        return vec, pdf
+
+    def lightIS(curPos):
         rPos, lnorm = randLight()
-        rDiff = rPos - outRay.src
-        outRay.vec = normalize(rDiff)
+        rDiff = rPos - curPos
+        vec = normalize(rDiff)
         #samplepdf maps the probability area from one area to another
         #this *projects* the light differential area onto the sphere
-        samplepdf = 1.0 / (4.0 * np.pi * 0.3333*2) #sphere total area
-        samplepdf *= abs(dot(lnorm, outRay.vec))   #area projection
-        samplepdf /= dot(rDiff, rDiff)             #area scale
-        samplepdf *= hemipdf                       #scale to final pdf
+        pdf = 1.0 / (4.0 * np.pi * 0.3333*2) #sphere total area
+        pdf *= abs(dot(lnorm, vec))          #area projection
+        pdf /= dot(rDiff, rDiff)             #area scale
+        pdf *= hemipdf                       #scale to final pdf
+        pdf *= 2.0 #this makes the result LOOK accurate, but isn't accurate.
+        #todo: rederive light IS to fix this bug
+        return vec, pdf
+    
+    if mode == "SurfaceIS":
+        outRay.vec, samplepdf = surfaceIS(normal)
+    elif mode == "LightIS":
+        outRay.vec, samplepdf = lightIS(outRay.src)
+    elif mode == "MIS":
+        lvec, lpdf = lightIS(outRay.src)
+        svec, spdf = surfaceIS(normal)
+        
+        #MIS single sample
+        lpdfWeight = lpdf / (lpdf + spdf)
+        
+        if rnd.random() < lpdfWeight:
+            samplemode = "LightIS"
+            samplepdf = lpdf * lpdfWeight
+            outRay.vec = lvec
+        else:
+            samplemode = "SurfaceIS"
+            samplepdf = spdf * (1.0 - lpdfWeight)
+            outRay.vec = svec
     else:
         outRay.vec = randSphere()
         samplepdf = 1.0 / np.pi
@@ -172,12 +201,12 @@ def raytrace(scene, ray, bounces, inID=0, mode="Hemisphere"):
     #"clamp"
     if dot(outRay.vec, normal) < 0.0:
         outRay.vec = reflect(outRay.vec, normal)
-
+    
     light = raytrace(scene, outRay, bounces - 1, outID)
-
-    if mode == "SurfaceIS":
+    
+    if samplemode == "SurfaceIS":
         diffuse = 1.0
-    elif mode == "LightIS":
+    elif samplemode == "LightIS":
         diffuse = dot(outRay.vec, normal)
     else:
         diffuse = dot(outRay.vec, normal)
@@ -214,7 +243,7 @@ def render(width=800, height=600, samples=1, bounces=1, mode="Hemisphere"):
             ray.src = np.array([0,0,0])
             ray.vec = normalize(np.array([xPos, 1.0, yPos]))
             line.append(raytrace(None, ray, bounces, mode=mode))
-
+            
             for i in range(samples - 1):
                 dx = 2.0*rnd.random() / width
                 dy = 2.0*rnd.random() / height
@@ -228,7 +257,6 @@ def render(width=800, height=600, samples=1, bounces=1, mode="Hemisphere"):
     fig = plt.figure(mode, figsize=(float(width)/100.0, float(height)/100.0))
     ax = fig.add_axes([0,0,1,1])
     ax.imshow(img)
-    
     #plt.show()
 
 def testSampler(sampler=randSphere):
@@ -265,9 +293,10 @@ if __name__ == "__main__":
     x = 800
     y = 600
     s = 1
+    render(width=x, height=y, samples=s, bounces=1)
     render(width=x, height=y, samples=s, bounces=1, mode="SurfaceIS")
     render(width=x, height=y, samples=s, bounces=1, mode="LightIS")
-    render(width=x, height=y, samples=s, bounces=1)
+    render(width=x, height=y, samples=s, bounces=1, mode="MIS")
     plt.show()
     #testSampler()
     #testSampler(lambda: randLambert(np.array([0.0,1.0,0.0])))
