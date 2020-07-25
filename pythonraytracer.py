@@ -75,10 +75,13 @@ def randLambert(normal):
     
     return toWorld(np.array([x, y, z]), normal)
 
-def randLight():
-    sPos = np.array([-0.25, 2.0, -1.0 + 0.3333])
-    rPos = randSphere() * 0.3333 + sPos
-    return rPos, normalize(rPos - sPos)
+def randLight(scene):
+    #currently the only lights are spheres.
+    surface = scene['spheres'][0]
+    sPos = surface['surface'][0]
+    rPos = randSphere() * surface['surface'][1] + sPos
+    pdf = 1.0 / (4.0 * np.pi * surface['surface'][1]**2) #sphere total area
+    return rPos, normalize(rPos - sPos), pdf
 
 def traverse(scene, ray, inID=0):
     outRay = Ray()
@@ -88,67 +91,88 @@ def traverse(scene, ray, inID=0):
     distMin = 0.001
     rayDist = sys.float_info.max
     outID = 0
+    IDOffset = 1
     
     #floor
-    norm = np.array([0,0,1])
-    offset = dot(norm, np.array([0,0,-1]))
-    if offset < dot(norm, ray.src):
-        #above surface
-        proj = dot(norm, ray.vec)
-        if proj < 0:
-            dst = Ray()
-            dst.src = ray.src - ray.vec / proj
-            
-            dstlen = length(dst.src - ray.src)
-            if inID != 1 and dstlen < rayDist:
-                rayDist = dstlen
-                outRay = dst
-                outNormal = norm
-                outID = 1
-    #spheres
-    #project sphere's origin onto the ray
-    sPos = np.array([-0.25, 2.0, -1.0 + 0.3333])
-    sRad = 0.3333
+    for n in range(len(scene['planes'])):
+        surfID = n + IDOffset
+        plane = scene['planes'][n]
+        norm = plane['surface'][0]
+        offset = dot(norm, plane['surface'][1])
+        if offset < dot(norm, ray.src):
+            #above surface
+            proj = dot(norm, ray.vec)
+            if proj < 0:
+                dst = Ray()
+                dst.src = ray.src - ray.vec / proj
+                
+                dstlen = length(dst.src - ray.src)
+                if inID != surfID and dstlen < rayDist:
+                    rayDist = dstlen
+                    outRay = dst
+                    outNormal = norm
+                    outID = surfID
+    IDOffset += len(scene['planes'])
     
-    sOffset = sPos - ray.src
-    sRayClosest = dot(sOffset, ray.vec)
-    sRayClosestDist2 = dot(sOffset, sOffset) - sRayClosest**2
-    sInnerOffset2 = sRad**2 - sRayClosestDist2
-    if 0 < sInnerOffset2:
-        #hit sphere, calculate intersection
-        sInnerOffset = np.sqrt(sInnerOffset2)
-        rDist = sRayClosest - sInnerOffset
-        if inID != 2 and rDist < rayDist:
-            rayDist = rDist
-            outRay.src = ray.src + ray.vec * rayDist
-            outNormal = normalize(outRay.src - sPos)
-            outID = 2
+    #spheres
+    for n in range(len(scene['spheres'])):
+        surfID = n + IDOffset
+        sphere = scene['spheres'][n]
+        #project sphere's origin onto the ray
+        sPos = sphere['surface'][0]
+        sRad = sphere['surface'][1]
+        sOffset = sPos - ray.src
+        sRayClosest = dot(sOffset, ray.vec)
+        sRayClosestDist2 = dot(sOffset, sOffset) - sRayClosest**2
+        sInnerOffset2 = sRad**2 - sRayClosestDist2
+        if 0 < sInnerOffset2:
+            #hit sphere, calculate intersection
+            sInnerOffset = np.sqrt(sInnerOffset2)
+            rDist = sRayClosest - sInnerOffset
+            if inID != surfID and rDist < rayDist:
+                rayDist = rDist
+                outRay.src = ray.src + ray.vec * rayDist
+                outNormal = normalize(outRay.src - sPos)
+                outID = surfID
             
     return outRay, outNormal, outID
 
+def lookupSceneByID(scene, ID):
+    IDOffset = 1
+    for Type in ['planes', 'spheres']:
+        typeLen = len(scene[Type])
+        if ID < typeLen + IDOffset:
+            return scene[Type][ID - IDOffset]
+        IDOffset += typeLen
+    return None
+
 def raytrace(scene, ray, bounces, inID=0, mode="Hemisphere"):
-    outRay, normal, outID = traverse(None, ray, inID)
+    outRay, normal, outID = traverse(scene, ray, inID)
     if outRay.src is None:
         # hit sky, sky is not reflective
-        return np.array(ot.s2l([0.0,0.0,0.1]))
+        return scene['sky']
     elif bounces == 0:
-        if outID == 1: # floor
-            return np.array([0.0,0.0,0.0])
-        else: #light
-            return np.array(ot.s2l([1.0,0.5,0.0]))
+        surface = lookupSceneByID(scene, outID)
+        if surface == None:
+            return np.array([0.0,0.0,0.0]) #error
+        return surface['material']['emission']
     
     #surface materials
-    if outID == 1: # floor
-        #Z = np.sin(np.pi * 2.0 * outRay.src[0]) * np.sin(np.pi * 2.0 * outRay.src[1])
-        Z = 1.0
-        Z = clamp(Z)
-        #Z = Z * 0.5 + 0.25
-        color = np.array([Z,Z,Z])
-        emission = np.array([0.0,0.0,0.0])
-    else: #light
-        color = np.array([1.0,1.0,1.0])
-        emission = np.array(ot.s2l([1.0,0.5,0.0]))
+    #if outID == 1: # floor
+    #    #Z = np.sin(np.pi * 2.0 * outRay.src[0]) * np.sin(np.pi * 2.0 * outRay.src[1])
+    #    Z = 1.0
+    #    Z = clamp(Z)
+    #    #Z = Z * 0.5 + 0.25
+    #    color = np.array([Z,Z,Z])
+    #    emission = np.array([0.0,0.0,0.0])
+    #else: #light
+    #    color = np.array([1.0,1.0,1.0])
+    #    emission = np.array(ot.s2l([1.0,0.5,0.0]))
 
+    surface = lookupSceneByID(scene, outID)
+    color = surface['material']['albedo']
+    emission = surface['material']['emission']
+    
     #generate new ray
     hemipdf = 1.0 / (2.0 * np.pi)
     samplemode = mode
@@ -162,16 +186,15 @@ def raytrace(scene, ray, bounces, inID=0, mode="Hemisphere"):
         return vec, pdf
 
     def lightIS(curPos):
-        rPos, lnorm = randLight()
+        rPos, lnorm, pdf = randLight(scene)
         rDiff = rPos - curPos
         vec = normalize(rDiff)
         #samplepdf maps the probability area from one area to another
         #this *projects* the light differential area onto the sphere
-        pdf = 1.0 / (4.0 * np.pi * 0.3333*2) #sphere total area
+        #pdf = 1.0 / (4.0 * np.pi * 0.3333**2)#sphere total area
         pdf *= abs(dot(lnorm, vec))          #area projection
         pdf /= dot(rDiff, rDiff)             #area scale
         pdf *= hemipdf                       #scale to final pdf
-        pdf *= 2.0 #this makes the result LOOK accurate, but isn't accurate.
         #todo: rederive light IS to fix this bug
         return vec, pdf
     
@@ -216,7 +239,7 @@ def raytrace(scene, ray, bounces, inID=0, mode="Hemisphere"):
 def toTimeString(t):
     return '{0} minutes {1} seconds'.format(*divmod(t, 60))
 
-def render(width=800, height=600, samples=1, bounces=1, mode="Hemisphere"):
+def render(scene, width=800, height=600, samples=1, bounces=1, mode="Hemisphere"):
     x = np.arange(width)
     y = np.arange(height)
     X = (2.0*x / width) - 1.0
@@ -242,13 +265,13 @@ def render(width=800, height=600, samples=1, bounces=1, mode="Hemisphere"):
             ray = Ray()
             ray.src = np.array([0,0,0])
             ray.vec = normalize(np.array([xPos, 1.0, yPos]))
-            line.append(raytrace(None, ray, bounces, mode=mode))
+            line.append(raytrace(scene, ray, bounces, mode=mode))
             
             for i in range(samples - 1):
                 dx = 2.0*rnd.random() / width
                 dy = 2.0*rnd.random() / height
                 ray.vec = normalize(np.array([xPos + dx, 1.0, yPos + dy]))
-                line[-1] += raytrace(None, ray, bounces, mode=mode)
+                line[-1] += raytrace(scene, ray, bounces, mode=mode)
             line[-1] = ot.l2s(line[-1] / float(samples))
         img.append(line)
         
@@ -289,14 +312,57 @@ def testSampler(sampler=randSphere):
     plt.imshow(img)
     plt.show()
 
+def defaultScene():
+    #no bsp or bvh for now
+    scene = dict()
+    scene['sky'] = np.array(ot.s2l([0.0,0.0,0.1]))
+    
+    #planes
+    planes = []
+
+    plane = dict()
+    norm = np.array([0,0,1])
+    point = np.array([0,0,-1])
+    plane['surface'] = [norm, point]
+    
+    albedo = np.array([1.0,1.0,1.0]) # todo: procedural textures
+    emission = np.array([0.0,0.0,0.0])
+    plane['material'] = {'albedo': albedo, 'emission': emission}
+    
+    planes.append(plane)
+    
+    scene['planes'] = planes
+
+    #spheres
+    spheres = []
+
+    sphere = dict()
+    sRad = 0.3333
+    sPos = np.array([-0.25, 2.0, -1.0 + sRad])
+    sphere['surface'] = [sPos, sRad]
+
+    albedo = np.array([1.0,1.0,1.0])
+    emission = np.array(ot.s2l([1.0,0.5,0.0]))
+    sphere['material'] = {'albedo': albedo, 'emission': emission}
+
+    spheres.append(sphere)
+    scene['spheres'] = spheres
+
+    for key in scene.keys():
+        print(scene[key])
+    
+    return scene
+    
+
 if __name__ == "__main__":
+    scene = defaultScene()
     x = 800
     y = 600
     s = 1
-    render(width=x, height=y, samples=s, bounces=1)
-    render(width=x, height=y, samples=s, bounces=1, mode="SurfaceIS")
-    render(width=x, height=y, samples=s, bounces=1, mode="LightIS")
-    render(width=x, height=y, samples=s, bounces=1, mode="MIS")
+    render(scene, width=x, height=y, samples=s, bounces=1)
+    render(scene, width=x, height=y, samples=s, bounces=1, mode="SurfaceIS")
+    render(scene, width=x, height=y, samples=s, bounces=1, mode="LightIS")
+    render(scene, width=x, height=y, samples=s, bounces=1, mode="MIS")
     plt.show()
     #testSampler()
     #testSampler(lambda: randLambert(np.array([0.0,1.0,0.0])))
