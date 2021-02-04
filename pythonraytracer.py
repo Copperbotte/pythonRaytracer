@@ -7,10 +7,13 @@ import random as rnd
 import sys
 import time
 
+def vec3(i):
+    return np.array([i,i,i])
+
 class Ray:
-    def __init__(self):
-        self.src = np.array([0,0,0])
-        self.vec = np.array([0,0,0])
+    def __init__(self, s=vec3(0), v=vec3(0)):
+        self.src = s
+        self.vec = v
 
 def clamp(v, low=0.0, high=1.0):
     if v < low:
@@ -88,14 +91,23 @@ def randLight(scene):
     pdf = 1.0 / (4.0 * np.pi * surface['surface'][1]**2) #sphere total area
     return rPos, normalize(rPos - sPos), pdf
 
-def traverse(scene, ray, inID=0):
-    outRay = Ray()
-    outRay.src = None
-    outRay.vec = ray.vec
-    outNormal = np.array([0,0,0])
+class tvHit:
+    """traversal struct. Contains rIn, normal, id, and rayDist."""
+    def __init__(self, ray=Ray(), norm=vec3(3), ID=0, RD=0.0):
+        rIn = ray
+        normal = norm
+        Id = ID
+        rayDist = RD
+
+def traverse(scene, rIn, inID=0):
+    hit = tvHit()
+    hit.rIn = Ray()
+    hit.rIn.src = rIn.src
+    hit.rIn.vec = rIn.vec
+    hit.normal = np.array([0,0,0])
     distMin = 0.001
-    rayDist = sys.float_info.max
-    outID = 0
+    hit.rayDist = sys.float_info.max
+    hit.Id = 0
     IDOffset = 1
     
     #floor
@@ -104,19 +116,20 @@ def traverse(scene, ray, inID=0):
         plane = scene['planes'][n]
         norm = plane['surface'][0]
         offset = dot(norm, plane['surface'][1])
-        if offset < dot(norm, ray.src):
+        if offset < dot(norm, rIn.src):
             #above surface
-            proj = dot(norm, ray.vec)
+            proj = dot(norm, rIn.vec)
             if proj < 0:
                 dst = Ray()
-                dst.src = ray.src - ray.vec / proj
+                dst.src = rIn.src - rIn.vec / proj
+                dst.dir = hit.rIn.vec
                 
-                dstlen = length(dst.src - ray.src)
-                if inID != surfID and dstlen < rayDist:
-                    rayDist = dstlen
-                    outRay = dst
-                    outNormal = norm
-                    outID = surfID
+                dstlen = length(dst.src - rIn.src)
+                if inID != surfID and dstlen < hit.rayDist:
+                    hit.rayDist = dstlen
+                    hit.rIn = dst
+                    hit.normal = norm
+                    hit.Id = surfID
     IDOffset += len(scene['planes'])
     
     #spheres
@@ -126,21 +139,21 @@ def traverse(scene, ray, inID=0):
         #project sphere's origin onto the ray
         sPos = sphere['surface'][0]
         sRad = sphere['surface'][1]
-        sOffset = sPos - ray.src
-        sRayClosest = dot(sOffset, ray.vec)
+        sOffset = sPos - rIn.src
+        sRayClosest = dot(sOffset, rIn.vec)
         sRayClosestDist2 = dot(sOffset, sOffset) - sRayClosest**2
         sInnerOffset2 = sRad**2 - sRayClosestDist2
         if 0 < sInnerOffset2:
             #hit sphere, calculate intersection
             sInnerOffset = np.sqrt(sInnerOffset2)
             rDist = sRayClosest - sInnerOffset
-            if inID != surfID and rDist < rayDist:
-                rayDist = rDist
-                outRay.src = ray.src + ray.vec * rayDist
-                outNormal = normalize(outRay.src - sPos)
-                outID = surfID
-            
-    return outRay, outNormal, outID
+            if inID != surfID and rDist < hit.rayDist:
+                hit.rayDist = rDist
+                hit.rIn.src = rIn.src + rIn.vec * hit.rayDist
+                hit.normal = normalize(rIn.src - sPos)
+                hit.Id = surfID
+    return hit       
+    #return outRay, outNormal, outID
 
 def lookupSceneByID(scene, ID):
     IDOffset = 1
@@ -151,20 +164,22 @@ def lookupSceneByID(scene, ID):
         IDOffset += typeLen
     return None
 
-def raytrace(scene, ray, bounces, inID=0, mode="Hemisphere"):
-    outRay, normal, outID = traverse(scene, ray, inID)
-    if outRay.src is None:
+def raytrace(scene, rIn, bounces, inID=0, mode="Hemisphere"):
+    #outRay, normal, outID = traverse(scene, rIn, inID)
+    hit = traverse(scene, rIn, inID)
+    
+    if hit.rIn.src is None:
         # hit sky, sky is not reflective
         return scene['sky']
     elif bounces == 0:
-        surface = lookupSceneByID(scene, outID)
+        surface = lookupSceneByID(scene, hit.Id)
         if surface == None:
             return np.array([0.0,0.0,0.0]) #error
         return surface['material']['emission']
     
     #surface materials
-    #if outID == 1: # floor
-    #    #Z = np.sin(np.pi * 2.0 * outRay.src[0]) * np.sin(np.pi * 2.0 * outRay.src[1])
+    #if hit.Id == 1: # floor
+    #    #Z = np.sin(np.pi * 2.0 * hit.rIn.src[0]) * np.sin(np.pi * 2.0 * hit.rIn.src[1])
     #    Z = 1.0
     #    Z = clamp(Z)
     #    #Z = Z * 0.5 + 0.25
@@ -174,7 +189,7 @@ def raytrace(scene, ray, bounces, inID=0, mode="Hemisphere"):
     #    color = np.array([1.0,1.0,1.0])
     #    emission = np.array(ot.s2l([1.0,0.5,0.0]))
 
-    surface = lookupSceneByID(scene, outID)
+    surface = lookupSceneByID(scene, hit.Id)
     color = surface['material']['albedo']
     emission = surface['material']['emission']
     
@@ -204,12 +219,12 @@ def raytrace(scene, ray, bounces, inID=0, mode="Hemisphere"):
         return vec, pdf
     
     if mode == "SurfaceIS":
-        outRay.vec, samplepdf = surfaceIS(normal)
+        hit.rIn.vec, samplepdf = surfaceIS(hit.normal)
     elif mode == "LightIS":
-        outRay.vec, samplepdf = lightIS(outRay.src)
+        hit.rIn.vec, samplepdf = lightIS(hit.rIn.src)
     elif mode == "MIS":
-        lvec, lpdf = lightIS(outRay.src)
-        svec, spdf = surfaceIS(normal)
+        lvec, lpdf = lightIS(hit.rIn.src)
+        svec, spdf = surfaceIS(hit.normal)
         
         #MIS single sample
         lpdfWeight = lpdf / (lpdf + spdf)
@@ -217,27 +232,27 @@ def raytrace(scene, ray, bounces, inID=0, mode="Hemisphere"):
         if rnd.random() < lpdfWeight:
             samplemode = "LightIS"
             samplepdf = lpdf * lpdfWeight
-            outRay.vec = lvec
+            hit.rIn.vec = lvec
         else:
             samplemode = "SurfaceIS"
             samplepdf = spdf * (1.0 - lpdfWeight)
-            outRay.vec = svec
+            hit.rIn.vec = svec
     else:
-        outRay.vec = randSphere()
+        hit.rIn.vec = randSphere()
         samplepdf = 1.0 / np.pi
 
     #"clamp"
-    if dot(outRay.vec, normal) < 0.0:
-        outRay.vec = reflect(outRay.vec, normal)
+    if dot(hit.rIn.vec, hit.normal) < 0.0:
+        hit.rIn.vec = reflect(hit.rIn.vec, hit.normal)
     
-    light = raytrace(scene, outRay, bounces - 1, outID)
+    light = raytrace(scene, hit.rIn, bounces - 1, hit.Id)
     
     if samplemode == "SurfaceIS":
         diffuse = 1.0
     elif samplemode == "LightIS":
-        diffuse = dot(outRay.vec, normal)
+        diffuse = dot(hit.rIn.vec, hit.normal)
     else:
-        diffuse = dot(outRay.vec, normal)
+        diffuse = dot(hit.rIn.vec, hit.normal)
         
     return emission + light * color * diffuse * (samplepdf / hemipdf)
 
@@ -258,15 +273,15 @@ def render(scene, width=800, height=600, samples=1, bounces=1, mode="Hemisphere"
     for yPos,yn in zip(Y[::-1], y):
         line = []
         for xPos,xn in zip(X,x):
-            curTime = time.time()
-            if 10.0 <= curTime - prevTime:
-                elapsedTime = curTime - startTime
-                prevTime = curTime
-                elapsedPercent = float(yn*width+xn)/(float(width*height) / 100.0)
-                print()
-                print(toTimeString(elapsedTime))
-                print(int(elapsedPercent), "% complete")
-                print(toTimeString((100.0 / elapsedPercent - 1.0)*elapsedTime) + " remaining")
+            #curTime = time.time()
+            #if 10.0 <= curTime - prevTime:
+            #    elapsedTime = curTime - startTime
+            #    prevTime = curTime
+            #    elapsedPercent = float(yn*width+xn)/(float(width*height) / 100.0)
+            #    print()
+            #    print(toTimeString(elapsedTime))
+            #    print(int(elapsedPercent), "% complete")
+            #    print(toTimeString((100.0 / elapsedPercent - 1.0)*elapsedTime) + " remaining")
             ray = Ray()
             ray.src = np.array([0,0,0])
             ray.vec = normalize(np.array([xPos, 1.0, yPos]))
