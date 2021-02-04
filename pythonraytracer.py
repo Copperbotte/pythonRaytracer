@@ -178,11 +178,61 @@ def lookupSceneByID(scene, ID):
         IDOffset += typeLen
     return None
 
-def raytrace(scene, rIn, bounces, inID=0, mode="Hemisphere"):
-    #outRay, normal, outID = traverse(scene, rIn, inID)
+#brdfs
+def brdfLambert(hit, rOut):
+    diffuse = dot(hit.normal, rOut.vec) / np.pi
+    diffuse = max(0.0, diffuse)
+    return diffuse
+
+#samplers & their pdfs
+def sampleSphere(hit):
+    rOut = randSphere()
+    if dot(rOut, hit.normal) < 0.0:
+        rOut = reflect(rOut, hit.normal)
+    pdf = 1.0 / (2.0 * np.pi)
+    return rOut, pdf
+def pdfSphere(hit, rOut):
+    return 1.0 / np.pi
+
+def sampleLambert(hit):
+    rOut = randLambert(hit.normal)
+    pdf = brdfLambert(hit, Ray(v=rOut))
+    return rOut, pdf
+def pdfLambert(hit, rOut):
+    return brdfLambert(hit, rOut)
+
+def sampleLight(hit, sPos, sRad):
+    #selects a random point to raytrace towards
+    rPos = randSphere()
+    rNorm = rPos.copy()
+
+    #finds the vector from the ray source to this sample
+    rPos = sRad*rPos + sPos - hit.rIn.src
+
+    #pdf is the probability area projected from this point
+    r2 = dot(rPos, rPos)
+    rOut = rPos / np.sqrt(r2)
+
+    area = 2.0 * np.pi * sRad**2
+    area *= abs(dot(rNorm, rOut)) #projected area
+    pdf = 1.0
+    try:
+        pdf = r2 / area
+    except ZeroDivisionError as e:
+        pdf = 0.0
+
+    return rOut, pdf
+def pdfLight(hit, rOut, sPos, sRad):
+    delta = sPos - rOut.src
+    ndelta = normalize(delta)
+    delta2 = dot(delta, delta)
+    r2 = sRad**2
+
+#raytracers
+def raytrace_Hemisphere(scene, rIn, bounces, inID=0):
     hit = traverse(scene, rIn, inID)
     
-    if hit.rIn.src is None:
+    if hit.Id == 0:
         # hit sky, sky is not reflective
         return scene['sky']
     elif bounces == 0:
@@ -190,18 +240,100 @@ def raytrace(scene, rIn, bounces, inID=0, mode="Hemisphere"):
         if surface == None:
             return np.array([0.0,0.0,0.0]) #error
         return surface['material']['emission']
+
+    surface = lookupSceneByID(scene, hit.Id)
+    color = surface['material']['albedo']
+    emission = surface['material']['emission']
+
+    #generate new ray
+    rOut = Ray()
+    rOut.src = hit.rIn.src
+    rOut.vec, pdf = sampleSphere(hit)
     
-    #surface materials
-    #if hit.Id == 1: # floor
-    #    #Z = np.sin(np.pi * 2.0 * hit.rIn.src[0]) * np.sin(np.pi * 2.0 * hit.rIn.src[1])
-    #    Z = 1.0
-    #    Z = clamp(Z)
-    #    #Z = Z * 0.5 + 0.25
-    #    color = np.array([Z,Z,Z])
-    #    emission = np.array([0.0,0.0,0.0])
-    #else: #light
-    #    color = np.array([1.0,1.0,1.0])
-    #    emission = np.array(ot.s2l([1.0,0.5,0.0]))
+    light = raytrace_Hemisphere(scene, rOut, bounces - 1, hit.Id)
+    
+    brdf = brdfLambert(hit, rOut)
+    brdf = brdf * color
+        
+    return emission + light * brdf / pdf
+
+def raytrace_Lambert(scene, rIn, bounces, inID=0):
+    hit = traverse(scene, rIn, inID)
+    
+    if hit.Id == 0:
+        # hit sky, sky is not reflective
+        return scene['sky']
+    elif bounces == 0:
+        surface = lookupSceneByID(scene, hit.Id)
+        if surface == None:
+            return np.array([0.0,0.0,0.0]) #error
+        return surface['material']['emission']
+
+    surface = lookupSceneByID(scene, hit.Id)
+    color = surface['material']['albedo']
+    emission = surface['material']['emission']
+
+    #generate new ray
+    rOut = Ray()
+    rOut.src = hit.rIn.src
+    rOut.vec, pdf = sampleLambert(hit)
+    
+    light = raytrace_Lambert(scene, rOut, bounces - 1, hit.Id)
+    
+    brdf = brdfLambert(hit, rOut)
+    brdf = brdf * color
+        
+    return emission + light * brdf / pdf
+
+def raytrace_Light(scene, rIn, bounces, inID=0):
+    hit = traverse(scene, rIn, inID)
+    
+    if hit.Id == 0:
+        # hit sky, sky is not reflective
+        return scene['sky']
+    elif bounces == 0:
+        surface = lookupSceneByID(scene, hit.Id)
+        if surface == None:
+            return np.array([0.0,0.0,0.0]) #error
+        return surface['material']['emission']
+
+    surface = lookupSceneByID(scene, hit.Id)
+    color = surface['material']['albedo']
+    emission = surface['material']['emission']
+
+    #generate new ray
+    rOut = Ray()
+    rOut.src = hit.rIn.src
+    surf = scene['spheres'][0]['surface']
+    rOut.vec, pdf = sampleLight(hit, surf[0], surf[1])
+    
+    light = raytrace_Light(scene, rOut, bounces - 1, hit.Id)
+    
+    brdf = brdfLambert(hit, rOut)
+    brdf = brdf * color
+        
+    return emission + light * brdf / pdf
+
+def raytrace(scene, rIn, bounces, inID=0, mode="Hemisphere"):
+    if mode == "Hemisphere":
+        return raytrace_Hemisphere(scene, rIn, bounces, inID)
+    elif mode == "SurfaceIS":
+        return raytrace_Lambert(scene, rIn, bounces, inID)
+    elif mode == "LightIS":
+        return raytrace_Light(scene, rIn, bounces, inID)
+
+    #else run bad MIS code
+    
+    hit = traverse(scene, rIn, inID)
+    
+    if hit.Id == 0:
+        # hit sky, sky is not reflective
+        return scene['sky']
+    elif bounces == 0:
+        surface = lookupSceneByID(scene, hit.Id)
+        if surface == None:
+            return np.array([0.0,0.0,0.0]) #error
+        return surface['material']['emission']
 
     surface = lookupSceneByID(scene, hit.Id)
     color = surface['material']['albedo']
@@ -264,9 +396,9 @@ def raytrace(scene, rIn, bounces, inID=0, mode="Hemisphere"):
     if samplemode == "SurfaceIS":
         diffuse = 1.0
     elif samplemode == "LightIS":
-        diffuse = dot(hit.rIn.vec, hit.normal)
+        diffuse = brdfLambert(hit, hit.rIn) * np.pi
     else:
-        diffuse = dot(hit.rIn.vec, hit.normal)
+        diffuse = brdfLambert(hit, hit.rIn) * np.pi
         
     return emission + light * color * diffuse * (samplepdf / hemipdf)
 
@@ -396,7 +528,7 @@ if __name__ == "__main__":
     render(scene, width=x, height=y, samples=s, bounces=1)
     render(scene, width=x, height=y, samples=s, bounces=1, mode="SurfaceIS")
     render(scene, width=x, height=y, samples=s, bounces=1, mode="LightIS")
-    render(scene, width=x, height=y, samples=s, bounces=1, mode="MIS")
+    #render(scene, width=x, height=y, samples=s, bounces=1, mode="MIS")
     plt.show()
     #testSampler()
     #testSampler(lambda: randLambert(np.array([0.0,1.0,0.0])))
