@@ -222,11 +222,54 @@ def sampleLight(hit, sPos, sRad):
         pdf = 0.0
 
     return rOut, pdf
-def pdfLight(hit, rOut, sPos, sRad):
+def pdfLight(hit, rOut, sPos, sRad): #the big one
     delta = sPos - rOut.src
     ndelta = normalize(delta)
     delta2 = dot(delta, delta)
     r2 = sRad**2
+    proj = dot(ndelta, rOut.vec)
+    if proj < 0.0: #sphere is below ray
+        return 0.0
+    if delta2 < r2: #ray is within sphere
+        return 0.0 #harder to code
+    if proj**2 <= (1.0 - r2/delta2): #if the ray missed the sphere
+        return 0.0
+
+    #find intersection
+    mdelta = np.sqrt(delta2)
+    mmid = dot(delta, rOut.vec) # length of line that makes a right angle to the sphere
+    mmid2 = mmid**2
+    mdev2 = r2 + mmid2 - delta2
+    if mdev2 < 0.0: #another missed sphere check
+        return 0.0
+
+    #mdev is the little length difference between mid and dist
+    mdev = sqrt(mdev2)
+    dist1 = mmid - mdev # is this a complex root?
+    dist2 = mmid + mdev # a sqrt's involved, and there's two conjugates
+    sHit1 = dist1 * rOut.vec + rOut.src
+    sHit2 = dist2 * rOut.vec + rOut.src
+    n1 = normalize(sHit1 - sPos)
+    n2 = normalize(sHit2 - sPos)
+
+    #find projected areas
+    pdf = 0.0
+    SA = 4.0 * np.pi * r2
+    A1 = SA * abs(dot(n1, rOut.vec))
+    A2 = SA * abs(dot(n2, rOut.vec))
+
+    #area facing the ray, over the distance^2
+    pdf1 = 0.0
+    pdf2 = 0.0
+    try:
+        pdf1 = dist1**2 / A1
+    except ZeroDivisionError as e:
+        pdf1 = 0.0
+    try:
+        pdf2 = dist2**2 / A2
+    except ZeroDivisionError as e:
+        pdf2 = 0.0
+    return pdf1 + pdf2
 
 #raytracers
 def raytrace_Hemisphere(scene, rIn, bounces, inID=0):
