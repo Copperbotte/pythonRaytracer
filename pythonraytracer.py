@@ -48,14 +48,19 @@ def toWorld(vec, normal):
     #todo: do this properly using quaternions
     sampleNormal = np.array([0.0,0.0,1.0])
     cos = dot(sampleNormal, normal)
-    if 0.99 < cos:
+
+    epsilon = 1.0 - 1e-5
+    if epsilon < cos:
         return vec
+    if cos < -epsilon:
+        return -vec;
 
     #make a pair of bases that are orthogonal to the normal
     b1 = np.cross(sampleNormal, normal)
     b1 = normalize(b1)
     b2 = np.cross(b1, normal)
-
+    br = normalize(b2)
+    
     #rotate toward normal
     M = np.array([b1, b2, normal]).transpose()
 
