@@ -115,20 +115,26 @@ def tvSphere(rIn, hit, surfID, sRad, sPos):
             hit.Id = surfID
 
 def tvPlane(rIn, hit, surfID, normal, offset):
-    if offset < dot(normal, rIn.src):
-        #above surface
-        proj = dot(normal, rIn.vec)
-        if proj < 0:
-            dst = Ray()
-            dst.src = rIn.src - rIn.vec / proj
-            dst.dir = hit.rIn.vec
-            
-            dstlen = length(dst.src - rIn.src)
-            if dstlen < hit.rayDist:
-                hit.rayDist = dstlen
-                hit.rIn = dst
-                hit.normal = normal
-                hit.Id = surfID
+    #test if ray is above surface
+    side = dot(normal, rIn.src)
+    above = offset < side
+    
+    #test if ray points toward surface
+    proj = dot(normal, rIn.vec)
+    facing = proj < 0.0
+
+    if above == facing:
+        dst = Ray()
+        dst.src = rIn.src + rIn.vec * (offset - side) / proj
+        dst.vec = rIn.vec
+        dstlen = length(dst.src - rIn.src)
+        if dstlen < hit.rayDist:
+            hit.rayDist = dstlen
+            hit.rIn = dst
+            hit.normal = normal
+            hit.Id = surfID
+            if not above:
+                hit.normal = -normal
 
 def traverse(scene, rIn, inID=0):
     hit = tvHit()
