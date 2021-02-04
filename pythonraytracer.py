@@ -192,7 +192,7 @@ def sampleSphere(hit):
     pdf = 1.0 / (2.0 * np.pi)
     return rOut, pdf
 def pdfSphere(hit, rOut):
-    return 1.0 / np.pi
+    return 1.0 / (2.0 * np.pi)
 
 def sampleLambert(hit):
     rOut = randLambert(hit.normal)
@@ -244,7 +244,7 @@ def pdfLight(hit, rOut, sPos, sRad): #the big one
         return 0.0
 
     #mdev is the little length difference between mid and dist
-    mdev = sqrt(mdev2)
+    mdev = np.sqrt(mdev2)
     dist1 = mmid - mdev # is this a complex root?
     dist2 = mmid + mdev # a sqrt's involved, and there's two conjugates
     sHit1 = dist1 * rOut.vec + rOut.src
@@ -270,6 +270,52 @@ def pdfLight(hit, rOut, sPos, sRad): #the big one
     except ZeroDivisionError as e:
         pdf2 = 0.0
     return pdf1 + pdf2
+
+def sampleMIS(hit):
+    #build method space
+    c_Hemi = 1/3
+    c_Lambert = 1/3
+    c_Light = 1/3
+
+    methodspace = [c_Hemi, c_Lambert, c_Light]
+    #pick a method from methodspace
+    pick = rnd.random()
+    c = 0
+    methodSum = 0.0
+    for m in methodspace:
+        methodSum += m
+        if pick < methodSum:
+            break
+        c = c+1
+    
+    #find sample from chosen method
+    rOut = Ray()
+    rOut.src = hit.rIn.src
+    
+    pdf = 0.0
+    if c == 0:
+        rOut.vec, pdf = sampleSphere(hit)
+    elif c == 1:
+        rOut.vec, pdf = sampleLambert(hit)
+    else:
+        surf = scene['spheres'][0]['surface']
+        rOut.vec, pdf = sampleLight(hit, surf[0], surf[1])
+
+    #reduce probability by methodspace
+    pdf *= methodspace[c]
+
+    #find pdfs from other samplers, the heart of MIS
+    for i in range(len(methodspace)):
+        j = (i+c+1) % len(methodspace) # skips the precomputed method
+        if j == 0:
+            pdf += methodspace[j] * pdfSphere(hit, rOut)
+        elif j == 1:
+            pdf += methodspace[j] * pdfLambert(hit, rOut)
+        else: #j == 2:
+            surf = scene['spheres'][0]['surface']
+            pdf += methodspace[j] * pdfLight(hit, rOut, surf[0], surf[1])
+    
+    return rOut.vec, pdf
 
 #raytracers
 def raytrace_Hemisphere(scene, rIn, bounces, inID=0):
@@ -357,16 +403,7 @@ def raytrace_Light(scene, rIn, bounces, inID=0):
         
     return emission + light * brdf / pdf
 
-def raytrace(scene, rIn, bounces, inID=0, mode="Hemisphere"):
-    if mode == "Hemisphere":
-        return raytrace_Hemisphere(scene, rIn, bounces, inID)
-    elif mode == "SurfaceIS":
-        return raytrace_Lambert(scene, rIn, bounces, inID)
-    elif mode == "LightIS":
-        return raytrace_Light(scene, rIn, bounces, inID)
-
-    #else run bad MIS code
-    
+def raytrace_Random_IS(scene, rIn, bounces, inID=0):
     hit = traverse(scene, rIn, inID)
     
     if hit.Id == 0:
@@ -381,69 +418,67 @@ def raytrace(scene, rIn, bounces, inID=0, mode="Hemisphere"):
     surface = lookupSceneByID(scene, hit.Id)
     color = surface['material']['albedo']
     emission = surface['material']['emission']
-    
+
     #generate new ray
-    hemipdf = 1.0 / (2.0 * np.pi)
-    samplemode = mode
+    rOut = Ray()
+    rOut.src = hit.rIn.src
 
-    def hemisphere():
-        return randSphere(), 1.0 / np.pi
+    pick = rnd.random()
+    if pick < 1/3:
+        rOut.vec, pdf = sampleSphere(hit)
+    elif pick < 2/3:
+        rOut.vec, pdf = sampleLambert(hit)
+    else:
+        surf = scene['spheres'][0]['surface']
+        rOut.vec, pdf = sampleLight(hit, surf[0], surf[1])
     
-    def surfaceIS(normal):
-        vec = randLambert(normal)
-        pdf = hemipdf # uniform pdf
-        return vec, pdf
+    light = raytrace_Random_IS(scene, rOut, bounces - 1, hit.Id)
+    
+    brdf = brdfLambert(hit, rOut)
+    brdf = brdf * color
+        
+    return emission + light * brdf / pdf
 
-    def lightIS(curPos):
-        rPos, lnorm, pdf = randLight(scene)
-        rDiff = rPos - curPos
-        vec = normalize(rDiff)
-        #samplepdf maps the probability area from one area to another
-        #this *projects* the light differential area onto the sphere
-        #pdf = 1.0 / (4.0 * np.pi * 0.3333**2)#sphere total area
-        pdf *= abs(dot(lnorm, vec))          #area projection
-        pdf /= dot(rDiff, rDiff)             #area scale
-        pdf *= hemipdf                       #scale to final pdf
-        #todo: rederive light IS to fix this bug
-        return vec, pdf
+def raytrace_MIS(scene, rIn, bounces, inID=0):
+    hit = traverse(scene, rIn, inID)
     
-    if mode == "SurfaceIS":
-        hit.rIn.vec, samplepdf = surfaceIS(hit.normal)
+    if hit.Id == 0:
+        # hit sky, sky is not reflective
+        return scene['sky']
+    elif bounces == 0:
+        surface = lookupSceneByID(scene, hit.Id)
+        if surface == None:
+            return np.array([0.0,0.0,0.0]) #error
+        return surface['material']['emission']
+
+    surface = lookupSceneByID(scene, hit.Id)
+    color = surface['material']['albedo']
+    emission = surface['material']['emission']
+
+    #generate new ray
+    rOut = Ray()
+    rOut.src = hit.rIn.src
+    rOut.vec, pdf = sampleMIS(hit)
+    
+    light = raytrace_MIS(scene, rOut, bounces - 1, hit.Id)
+    
+    brdf = brdfLambert(hit, rOut)
+    brdf = brdf * color
+        
+    return emission + light * brdf / pdf
+
+def raytrace(scene, rIn, bounces, inID=0, mode="Hemisphere"):
+    if mode == "Hemisphere":
+        return raytrace_Hemisphere(scene, rIn, bounces, inID)
+    elif mode == "SurfaceIS":
+        return raytrace_Lambert(scene, rIn, bounces, inID)
     elif mode == "LightIS":
-        hit.rIn.vec, samplepdf = lightIS(hit.rIn.src)
-    elif mode == "MIS":
-        lvec, lpdf = lightIS(hit.rIn.src)
-        svec, spdf = surfaceIS(hit.normal)
-        
-        #MIS single sample
-        lpdfWeight = lpdf / (lpdf + spdf)
-        
-        if rnd.random() < lpdfWeight:
-            samplemode = "LightIS"
-            samplepdf = lpdf * lpdfWeight
-            hit.rIn.vec = lvec
-        else:
-            samplemode = "SurfaceIS"
-            samplepdf = spdf * (1.0 - lpdfWeight)
-            hit.rIn.vec = svec
-    else:
-        hit.rIn.vec = randSphere()
-        samplepdf = 1.0 / np.pi
-
-    #"clamp"
-    if dot(hit.rIn.vec, hit.normal) < 0.0:
-        hit.rIn.vec = reflect(hit.rIn.vec, hit.normal)
+        return raytrace_Light(scene, rIn, bounces, inID)
+    elif mode == "RandomIS":
+        return raytrace_Random_IS(scene, rIn, bounces, inID)
+    #else:# mode == "MIS":
+    return raytrace_MIS(scene, rIn, bounces, inID)
     
-    light = raytrace(scene, hit.rIn, bounces - 1, hit.Id)
-    
-    if samplemode == "SurfaceIS":
-        diffuse = 1.0
-    elif samplemode == "LightIS":
-        diffuse = brdfLambert(hit, hit.rIn) * np.pi
-    else:
-        diffuse = brdfLambert(hit, hit.rIn) * np.pi
-        
-    return emission + light * color * diffuse * (samplepdf / hemipdf)
 
 def toTimeString(t):
     return '{0} minutes {1} seconds'.format(*divmod(t, 60))
@@ -571,7 +606,8 @@ if __name__ == "__main__":
     render(scene, width=x, height=y, samples=s, bounces=1)
     render(scene, width=x, height=y, samples=s, bounces=1, mode="SurfaceIS")
     render(scene, width=x, height=y, samples=s, bounces=1, mode="LightIS")
-    #render(scene, width=x, height=y, samples=s, bounces=1, mode="MIS")
+    render(scene, width=x, height=y, samples=s, bounces=1, mode="RandomIS")
+    render(scene, width=x, height=y, samples=s, bounces=1, mode="MIS")
     plt.show()
     #testSampler()
     #testSampler(lambda: randLambert(np.array([0.0,1.0,0.0])))
