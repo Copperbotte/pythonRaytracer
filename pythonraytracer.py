@@ -99,6 +99,37 @@ class tvHit:
         Id = ID
         rayDist = RD
 
+def tvSphere(rIn, hit, surfID, sRad, sPos):
+    sOffset = sPos - rIn.src
+    sRayClosest = dot(sOffset, rIn.vec)
+    sRayClosestDist2 = dot(sOffset, sOffset) - sRayClosest**2
+    sInnerOffset2 = sRad**2 - sRayClosestDist2
+    if 0 < sInnerOffset2:
+        #hit sphere, calculate intersection
+        sInnerOffset = np.sqrt(sInnerOffset2)
+        rDist = sRayClosest - sInnerOffset
+        if rDist < hit.rayDist:
+            hit.rayDist = rDist
+            hit.rIn.src = rIn.src + rIn.vec * hit.rayDist
+            hit.normal = normalize(rIn.src - sPos)
+            hit.Id = surfID
+
+def tvPlane(rIn, hit, surfID, normal, offset):
+    if offset < dot(normal, rIn.src):
+        #above surface
+        proj = dot(normal, rIn.vec)
+        if proj < 0:
+            dst = Ray()
+            dst.src = rIn.src - rIn.vec / proj
+            dst.dir = hit.rIn.vec
+            
+            dstlen = length(dst.src - rIn.src)
+            if dstlen < hit.rayDist:
+                hit.rayDist = dstlen
+                hit.rIn = dst
+                hit.normal = normal
+                hit.Id = surfID
+
 def traverse(scene, rIn, inID=0):
     hit = tvHit()
     hit.rIn = Ray()
@@ -116,20 +147,8 @@ def traverse(scene, rIn, inID=0):
         plane = scene['planes'][n]
         norm = plane['surface'][0]
         offset = dot(norm, plane['surface'][1])
-        if offset < dot(norm, rIn.src):
-            #above surface
-            proj = dot(norm, rIn.vec)
-            if proj < 0:
-                dst = Ray()
-                dst.src = rIn.src - rIn.vec / proj
-                dst.dir = hit.rIn.vec
-                
-                dstlen = length(dst.src - rIn.src)
-                if inID != surfID and dstlen < hit.rayDist:
-                    hit.rayDist = dstlen
-                    hit.rIn = dst
-                    hit.normal = norm
-                    hit.Id = surfID
+        if inID != surfID:
+            tvPlane(rIn, hit, surfID, norm, offset)
     IDOffset += len(scene['planes'])
     
     #spheres
@@ -139,19 +158,8 @@ def traverse(scene, rIn, inID=0):
         #project sphere's origin onto the ray
         sPos = sphere['surface'][0]
         sRad = sphere['surface'][1]
-        sOffset = sPos - rIn.src
-        sRayClosest = dot(sOffset, rIn.vec)
-        sRayClosestDist2 = dot(sOffset, sOffset) - sRayClosest**2
-        sInnerOffset2 = sRad**2 - sRayClosestDist2
-        if 0 < sInnerOffset2:
-            #hit sphere, calculate intersection
-            sInnerOffset = np.sqrt(sInnerOffset2)
-            rDist = sRayClosest - sInnerOffset
-            if inID != surfID and rDist < hit.rayDist:
-                hit.rayDist = rDist
-                hit.rIn.src = rIn.src + rIn.vec * hit.rayDist
-                hit.normal = normalize(rIn.src - sPos)
-                hit.Id = surfID
+        if inID != surfID:
+            tvSphere(rIn, hit, surfID, sRad, sPos)
     return hit       
     #return outRay, outNormal, outID
 
