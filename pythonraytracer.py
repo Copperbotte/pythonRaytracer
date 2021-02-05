@@ -492,6 +492,9 @@ def render(scene, width=800, height=600, samples=1, bounces=1, mode="Hemisphere"
     startTime = time.time()
     prevTime = startTime
     prevPercent = 0.0
+
+    times = []
+    pcts = []
     
     img = []
     #for yPos,yn in zip(Y[::-1], y):
@@ -508,21 +511,25 @@ def render(scene, width=800, height=600, samples=1, bounces=1, mode="Hemisphere"
             X = (2.0*x / width) - 1.0
             xPos = X
             curTime = time.time()
-            if 10.0 <= curTime - prevTime:
+            #if 10.0 <= curTime - prevTime:
+            #if prevTime != startTime:
+            if 0.02 <= curTime - prevTime:
                 elapsedTime = curTime - startTime
                 dT = curTime - prevTime
                 prevTime = curTime
                 elapsedPercent = float((height-y)*width+x)/(float(width*height) / 100.0)
+                pcts.append(elapsedPercent)
+                times.append(elapsedTime)
                 dP = elapsedPercent - prevPercent
                 prevPercent = elapsedPercent
                 r = dP/dT
                 ir = dT/dP
                 P0 = elapsedPercent - r*elapsedTime
-                print()
-                print(toTimeString(elapsedTime))
-                print(int(elapsedPercent), "% complete")
-                #print(toTimeString((100.0 / elapsedPercent - 1.0)*elapsedTime) + " remaining")
-                print(toTimeString((100.0-P0)*ir-elapsedTime) + " remaining")
+                #print()
+                #print(toTimeString(elapsedTime))
+                #print(int(elapsedPercent), "% complete")
+                ##print(toTimeString((100.0 / elapsedPercent - 1.0)*elapsedTime) + " remaining")
+                #print(toTimeString((100.0-P0)*ir-elapsedTime) + " remaining")
             ray = Ray()
             ray.src = vec3(0)
             color = vec3(0)
@@ -540,6 +547,7 @@ def render(scene, width=800, height=600, samples=1, bounces=1, mode="Hemisphere"
     fig = plt.figure(mode, figsize=(float(width)/100.0, float(height)/100.0))
     ax = fig.add_axes([0,0,1,1])
     ax.imshow(img)
+    return times, pcts
     #plt.show()
 
 def testSampler(sampler=randSphere):
@@ -597,8 +605,8 @@ def defaultScene():
     spheres = []
 
     sphere = dict()
-    sRad = 0.3333
-    sPos = np.array([-0.25, 2.0, -1.0 + sRad])
+    sRad = 1.0
+    sPos = np.array([-1.0, 3.0, -1.0 + sRad])
     sphere['surface'] = [sPos, sRad]
 
     albedo = np.array([1.0,1.0,1.0])
@@ -606,6 +614,24 @@ def defaultScene():
     sphere['material'] = {'albedo': albedo, 'emission': emission}
 
     spheres.append(sphere)
+
+    #sphere array
+    for i in range(10):
+        aTime = 4.1 #+ iTime
+        sphere = dict()
+        sRad = 0.25
+        sPos = np.array([1.0, 3.0, -1.0 + sRad])
+        sPos += np.array([0.0,float(i)+1.0,0.0])
+        sPos += np.array([2.0 * 0.3 * float(i+1)*np.cos(aTime + float(i) / 2.0),0.0,0.0])
+        sphere['surface'] = [sPos, sRad]
+
+        albedo = np.array([1.0,1.0,1.0])
+        emission = np.array(ot.s2l([0.0,0.0,0.0]))
+        sphere['material'] = {'albedo': albedo, 'emission': emission}
+
+        spheres.append(sphere)
+    
+    
     scene['spheres'] = spheres
 
     for key in scene.keys():
@@ -619,11 +645,13 @@ if __name__ == "__main__":
     x = 800
     y = 600
     s = 1
-    render(scene, width=x, height=y, samples=s, bounces=1)
-    render(scene, width=x, height=y, samples=s, bounces=1, mode="SurfaceIS")
-    render(scene, width=x, height=y, samples=s, bounces=1, mode="LightIS")
-    render(scene, width=x, height=y, samples=s, bounces=1, mode="RandomIS")
-    render(scene, width=x, height=y, samples=s, bounces=1, mode="MIS")
+    #render(scene, width=x, height=y, samples=s, bounces=1)
+    #render(scene, width=x, height=y, samples=s, bounces=1, mode="SurfaceIS")
+    #render(scene, width=x, height=y, samples=s, bounces=1, mode="LightIS")
+    #render(scene, width=x, height=y, samples=s, bounces=1, mode="RandomIS")
+    times, pcts = render(scene, width=x, height=y, samples=s, bounces=1, mode="MIS")
+    plt.show()
+    plt.plot(times, pcts)
     plt.show()
     #testSampler()
     #testSampler(lambda: randLambert(np.array([0.0,1.0,0.0])))
