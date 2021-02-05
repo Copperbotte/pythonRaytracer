@@ -532,9 +532,18 @@ def render(scene, width=800, height=600, samples=1, bounces=1, mode="Hemisphere"
                 dy = 2.0*rnd.random() / height
                 ray.vec = normalize(np.array([xPos + dx, 1.0, yPos + dy]))
                 color += raytrace(scene, ray, bounces, mode=mode)
-            line.append(ot.l2s(color / float(samples)))
+            line.append(color / float(samples))
         img.append(line)
-        
+
+    #perform saturation clipping
+    img = [[mplcolor.rgb_to_hsv(x) for x in y] for y in img]
+    #if value > 1, divide it and saturation by value
+    img = [[[x[0], x[1]/x[2], x[1]] if 1.0 < x[2] else x for x in y] for y in img]
+    img = [[mplcolor.hsv_to_rgb(x) for x in y] for y in img]
+    
+    #convert to srgb color space
+    img = [[ot.l2s(x) for x in y] for y in img]
+    
     elapsedTime = time.time() - startTime
     print(toTimeString(elapsedTime) + ' total')
     fig = plt.figure(mode, figsize=(float(width)/100.0, float(height)/100.0))
@@ -626,8 +635,8 @@ def defaultScene():
     
     scene['spheres'] = spheres
 
-    for key in scene.keys():
-        print(scene[key])
+    #for key in scene.keys():
+    #    print(scene[key])
     
     return scene
     
