@@ -8,6 +8,7 @@ import sys
 import time
 
 def vec3(i):
+    i = float(i)
     return np.array([i,i,i])
 
 class Ray:
@@ -273,11 +274,13 @@ def pdfLight(hit, rOut, sPos, sRad): #the big one
 
 def sampleMIS(hit):
     #build method space
-    c_Hemi = 1/3
-    c_Lambert = 1/3
-    c_Light = 1/3
-
+    c_Hemi = 1.0
+    c_Lambert = 1.0
+    c_Light = 1.0
+    
     methodspace = [c_Hemi, c_Lambert, c_Light]
+    methodspace = [m / sum(methodspace) for m in methodspace] #normalize sum
+    
     #pick a method from methodspace
     pick = rnd.random()
     c = 0
@@ -305,7 +308,7 @@ def sampleMIS(hit):
     pdf *= methodspace[c]
 
     #find pdfs from other samplers, the heart of MIS
-    for i in range(len(methodspace)):
+    for i in range(len(methodspace) - 1):
         j = (i+c+1) % len(methodspace) # skips the precomputed method
         if j == 0:
             pdf += methodspace[j] * pdfSphere(hit, rOut)
@@ -468,55 +471,68 @@ def raytrace_MIS(scene, rIn, bounces, inID=0):
     return emission + light * brdf / pdf
 
 def raytrace(scene, rIn, bounces, inID=0, mode="Hemisphere"):
-    if mode == "Hemisphere":
-        return raytrace_Hemisphere(scene, rIn, bounces, inID)
-    elif mode == "SurfaceIS":
-        return raytrace_Lambert(scene, rIn, bounces, inID)
-    elif mode == "LightIS":
-        return raytrace_Light(scene, rIn, bounces, inID)
-    elif mode == "RandomIS":
-        return raytrace_Random_IS(scene, rIn, bounces, inID)
-    #else:# mode == "MIS":
-    return raytrace_MIS(scene, rIn, bounces, inID)
+    modes = {"Hemisphere":raytrace_Hemisphere,
+             "SurfaceIS":raytrace_Lambert,
+             "LightIS":raytrace_Light,
+             "RandomIS":raytrace_Random_IS,
+             "MIS":raytrace_MIS}
+    return modes[mode](scene, rIn, bounces, inID)
     
 
 def toTimeString(t):
     return '{0} minutes {1} seconds'.format(*divmod(t, 60))
 
 def render(scene, width=800, height=600, samples=1, bounces=1, mode="Hemisphere"):
-    x = np.arange(width)
-    y = np.arange(height)
-    X = (2.0*x / width) - 1.0
-    Y = (2.0*y / height) - 1.0
-    Y *= height / width
+    #x = np.arange(width)
+    #y = np.arange(height)
+    #X = (2.0*x / width) - 1.0
+    #Y = (2.0*y / height) - 1.0
+    #Y *= height / width
     
     startTime = time.time()
     prevTime = startTime
+    prevPercent = 0.0
     
     img = []
-    for yPos,yn in zip(Y[::-1], y):
+    #for yPos,yn in zip(Y[::-1], y):
+    for y in range(height): #iterators like this seem to greatly speed up the render
+        y = float(y)
+        y = height - y - 1.0
+        Y = (2.0*y / height) - 1.0
+        Y *= height / width
+        yPos = Y
         line = []
-        for xPos,xn in zip(X,x):
-            #curTime = time.time()
-            #if 10.0 <= curTime - prevTime:
-            #    elapsedTime = curTime - startTime
-            #    prevTime = curTime
-            #    elapsedPercent = float(yn*width+xn)/(float(width*height) / 100.0)
-            #    print()
-            #    print(toTimeString(elapsedTime))
-            #    print(int(elapsedPercent), "% complete")
-            #    print(toTimeString((100.0 / elapsedPercent - 1.0)*elapsedTime) + " remaining")
+        #for xPos,xn in zip(X,x):
+        for x in range(width):
+            x = float(x)
+            X = (2.0*x / width) - 1.0
+            xPos = X
+            curTime = time.time()
+            if 10.0 <= curTime - prevTime:
+                elapsedTime = curTime - startTime
+                dT = curTime - prevTime
+                prevTime = curTime
+                elapsedPercent = float((height-y)*width+x)/(float(width*height) / 100.0)
+                dP = elapsedPercent - prevPercent
+                prevPercent = elapsedPercent
+                r = dP/dT
+                ir = dT/dP
+                P0 = elapsedPercent - r*elapsedTime
+                print()
+                print(toTimeString(elapsedTime))
+                print(int(elapsedPercent), "% complete")
+                #print(toTimeString((100.0 / elapsedPercent - 1.0)*elapsedTime) + " remaining")
+                print(toTimeString((100.0-P0)*ir-elapsedTime) + " remaining")
             ray = Ray()
-            ray.src = np.array([0,0,0])
-            ray.vec = normalize(np.array([xPos, 1.0, yPos]))
-            line.append(raytrace(scene, ray, bounces, mode=mode))
-            
-            for i in range(samples - 1):
+            ray.src = vec3(0)
+            color = vec3(0)
+
+            for i in range(samples):
                 dx = 2.0*rnd.random() / width
                 dy = 2.0*rnd.random() / height
                 ray.vec = normalize(np.array([xPos + dx, 1.0, yPos + dy]))
-                line[-1] += raytrace(scene, ray, bounces, mode=mode)
-            line[-1] = ot.l2s(line[-1] / float(samples))
+                color += raytrace(scene, ray, bounces, mode=mode)
+            line.append(ot.l2s(color / float(samples)))
         img.append(line)
         
     elapsedTime = time.time() - startTime
