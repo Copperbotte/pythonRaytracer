@@ -495,29 +495,32 @@ def render(scene, width=800, height=600, samples=1, bounces=1, mode="Hemisphere"
 
     times = []
     pcts = []
+
+    rTimes = []
     
-    img = []
+    img = [[vec3(0) for x in range(width)] for y in range(height)]
+    #img = []
     #for yPos,yn in zip(Y[::-1], y):
     for y in range(height): #iterators like this seem to greatly speed up the render
-        y = float(y)
-        y = height - y - 1.0
-        Y = (2.0*y / height) - 1.0
+        yn = float(y)
+        yn = height - yn - 1.0
+        Y = (2.0*yn / height) - 1.0
         Y *= height / width
         yPos = Y
         line = []
         #for xPos,xn in zip(X,x):
         for x in range(width):
-            x = float(x)
-            X = (2.0*x / width) - 1.0
+            xn = float(x)
+            X = (2.0*xn / width) - 1.0
             xPos = X
             curTime = time.time()
             #if 10.0 <= curTime - prevTime:
             #if prevTime != startTime:
-            if 0.02 <= curTime - prevTime:
+            if 1.0 <= curTime - prevTime:
                 elapsedTime = curTime - startTime
                 dT = curTime - prevTime
                 prevTime = curTime
-                elapsedPercent = float((height-y)*width+x)/(float(width*height) / 100.0)
+                elapsedPercent = float((height-yn)*width+xn)/(float(width*height) / 100.0)
                 pcts.append(elapsedPercent)
                 times.append(elapsedTime)
                 dP = elapsedPercent - prevPercent
@@ -538,10 +541,30 @@ def render(scene, width=800, height=600, samples=1, bounces=1, mode="Hemisphere"
                 dx = 2.0*rnd.random() / width
                 dy = 2.0*rnd.random() / height
                 ray.vec = normalize(np.array([xPos + dx, 1.0, yPos + dy]))
+                rt = time.time()
                 color += raytrace(scene, ray, bounces, mode=mode)
-            line.append(ot.l2s(color / float(samples)))
-        img.append(line)
-        
+                rTimes.append(time.time() - rt)
+                
+            f = color / float(samples)
+            #f = ot.l2s(color / float(samples))
+            img[y][x] += f
+            #line.append(ot.l2s(color / float(samples)))
+        #img.append(line)
+
+    #to srgb
+    renderTime = time.time()
+    img = [[ot.l2s(x) for x in y] for y in img]
+    renderTime = time.time() - renderTime
+    print(toTimeString(renderTime) + ' toSrgb filter')
+
+    #render time analysis
+    #mean
+    rtAvg = sum(rTimes) / len(rTimes)
+    print("rtAvg", rtAvg)
+    #stdev
+    print("rtStdev", np.sqrt(sum([(x - rtAvg)**2 for x in rTimes]) / (len(rTimes) - 1)))
+
+    
     elapsedTime = time.time() - startTime
     print(toTimeString(elapsedTime) + ' total')
     fig = plt.figure(mode, figsize=(float(width)/100.0, float(height)/100.0))
@@ -642,8 +665,8 @@ def defaultScene():
 
 if __name__ == "__main__":
     scene = defaultScene()
-    x = 800
-    y = 600
+    x = 800 // 4
+    y = 600 // 4
     s = 1
     #render(scene, width=x, height=y, samples=s, bounces=1)
     #render(scene, width=x, height=y, samples=s, bounces=1, mode="SurfaceIS")
