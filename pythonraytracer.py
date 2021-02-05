@@ -597,8 +597,8 @@ def defaultScene():
     spheres = []
 
     sphere = dict()
-    sRad = 0.3333
-    sPos = np.array([-0.25, 2.0, -1.0 + sRad])
+    sRad = 1.0
+    sPos = np.array([-1.0, 3.0, -1.0 + sRad])
     sphere['surface'] = [sPos, sRad]
 
     albedo = np.array([1.0,1.0,1.0])
@@ -606,6 +606,24 @@ def defaultScene():
     sphere['material'] = {'albedo': albedo, 'emission': emission}
 
     spheres.append(sphere)
+
+    #sphere array
+    for i in range(10):
+        aTime = 4.1 #+ iTime
+        sphere = dict()
+        sRad = 0.25
+        sPos = np.array([1.0, 3.0, -1.0 + sRad])
+        sPos += np.array([0.0,float(i),0.0])
+        sPos += np.array([2.0 * 0.3 * float(i)*np.cos(aTime + float(i-1) / 2.0),0.0,0.0])
+        sphere['surface'] = [sPos, sRad]
+
+        albedo = np.array([1.0,1.0,1.0])
+        emission = np.array(ot.s2l([0.0,0.0,0.0]))
+        sphere['material'] = {'albedo': albedo, 'emission': emission}
+
+        spheres.append(sphere)
+    
+    
     scene['spheres'] = spheres
 
     for key in scene.keys():
@@ -619,10 +637,10 @@ if __name__ == "__main__":
     x = 800
     y = 600
     s = 1
-    render(scene, width=x, height=y, samples=s, bounces=1)
-    render(scene, width=x, height=y, samples=s, bounces=1, mode="SurfaceIS")
-    render(scene, width=x, height=y, samples=s, bounces=1, mode="LightIS")
-    render(scene, width=x, height=y, samples=s, bounces=1, mode="RandomIS")
+    #render(scene, width=x, height=y, samples=s, bounces=1)
+    #render(scene, width=x, height=y, samples=s, bounces=1, mode="SurfaceIS")
+    #render(scene, width=x, height=y, samples=s, bounces=1, mode="LightIS")
+    #render(scene, width=x, height=y, samples=s, bounces=1, mode="RandomIS")
     render(scene, width=x, height=y, samples=s, bounces=1, mode="MIS")
     plt.show()
     #testSampler()
