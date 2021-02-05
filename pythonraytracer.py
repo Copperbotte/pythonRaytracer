@@ -471,12 +471,14 @@ def raytrace_MIS(scene, rIn, bounces, inID=0):
     return emission + light * brdf / pdf
 
 def raytrace(scene, rIn, bounces, inID=0, mode="Hemisphere"):
+    rTime = time.time()
     modes = {"Hemisphere":raytrace_Hemisphere,
              "SurfaceIS":raytrace_Lambert,
              "LightIS":raytrace_Light,
              "RandomIS":raytrace_Random_IS,
              "MIS":raytrace_MIS}
-    return modes[mode](scene, rIn, bounces, inID)
+    m = modes[mode](scene, rIn, bounces, inID)
+    return m, time.time() - rTime
     
 
 def toTimeString(t):
@@ -497,6 +499,7 @@ def render(scene, width=800, height=600, samples=1, bounces=1, mode="Hemisphere"
     pcts = []
 
     rTimes = []
+    rTimes2 = []
     
     img = [[vec3(0) for x in range(width)] for y in range(height)]
     #img = []
@@ -536,15 +539,17 @@ def render(scene, width=800, height=600, samples=1, bounces=1, mode="Hemisphere"
             ray = Ray()
             ray.src = vec3(0)
             color = vec3(0)
-
+            
             for i in range(samples):
                 dx = 2.0*rnd.random() / width
                 dy = 2.0*rnd.random() / height
                 ray.vec = normalize(np.array([xPos + dx, 1.0, yPos + dy]))
                 rt = time.time()
-                color += raytrace(scene, ray, bounces, mode=mode)
+                c, r = raytrace(scene, ray, bounces, mode=mode)
+                color += c
+                rTimes2.append(r)
                 rTimes.append(time.time() - rt)
-                
+            
             f = color / float(samples)
             #f = ot.l2s(color / float(samples))
             img[y][x] += f
@@ -564,6 +569,11 @@ def render(scene, width=800, height=600, samples=1, bounces=1, mode="Hemisphere"
     #stdev
     print("rtStdev", np.sqrt(sum([(x - rtAvg)**2 for x in rTimes]) / (len(rTimes) - 1)))
 
+    #mean
+    rt2Avg = sum(rTimes2) / len(rTimes2)
+    print("rt2Avg", rt2Avg)
+    #stdev
+    print("rt2Stdev", np.sqrt(sum([(x - rt2Avg)**2 for x in rTimes2]) / (len(rTimes2) - 1)))
     
     elapsedTime = time.time() - startTime
     print(toTimeString(elapsedTime) + ' total')
